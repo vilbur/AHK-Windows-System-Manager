@@ -1,6 +1,6 @@
 ﻿/* -------------------------
-    System Configurator v0.51
-    Dark UI Add buttons & Link layout fixed
+    System Configurator v0.52
+    UI Overhaul: Larger Labels, Better Alignment
 -------------------------
 */ 
 
@@ -20,6 +20,7 @@ global g_tab_menu        := "TabMenu"
 global dark_background := "1E1E1E"
 global font_color := "D6D6D6"
 
+; Registry Variables
 global g_win_vars := ["chk_win_admin", "chk_win_prompt", "chk_win_uac", "chk_win_game_dvr", "chk_win_ads", "chk_win_lock_screen", "chk_win_narrator", "chk_win_usb", "chk_win_taskbar", "chk_win_widgets"]
 
 ; Right Click event for Tab Menu
@@ -44,7 +45,7 @@ Gui, Font, s10 c%font_color%, Segoe UI
 
 DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", h_main_gui, "Int", 20, "Int*", true, "Int", 4)
 
-; Mode Selection Button
+; Mode Selection
 Gui, Add, GroupBox, x20 y10 w1160 h80 c%font_color%, Execution Mode
 Gui, Font, s12 Bold
 Gui, Add, Button, vmode_btn gtoggleMode x40 y35 w250 h40 hwndh_mode, MODE: %g_current_mode%
@@ -82,119 +83,100 @@ For tab_idx, tab_name in g_tab_names
         data := g_tab_data[tab_name]
         y_pos := 150
         
-        ; 1. PATHS
-        Gui, Font, Bold c5599FF
-        Gui, Add, Text, x40 y%y_pos%, 1. Main Executable Paths
-        Gui, Font, Norm c%font_color%
-        y_pos += 25
-        For i, p in data.paths {
-            var_d := "btn_path_d_" tab_idx "_" i
-            var_f := "btn_path_f_" tab_idx "_" i
-            var_edit := "edit_path_" tab_idx "_" i
-            var_del := "btn_del_path_" tab_idx "_" i
+        ; SECTION BUILDER LOGIC
+        ; Using a helper loop style to maintain layout
+        sections := ["Paths", "Envs", "Execs", "Links"]
+        For sec_idx, sec_name in sections {
+            Gui, Font, Bold s14 c5599FF
+            Gui, Add, Text, x40 y%y_pos%, %sec_idx%. %sec_name%
+            Gui, Font, Norm s10 c%font_color%
+            y_pos += 35
             
-            Gui, Add, Edit, v%var_edit% x40 y%y_pos% w750 h25, %p%
-            Gui, Add, Button, v%var_d% gonBrowsePathDir hwndh_d x800 y%y_pos% w30 h25, D
-            Gui, Add, Button, v%var_f% gonBrowsePathFile hwndh_f x835 y%y_pos% w30 h25, F
-            
-            if (i > 1) {
-                Gui, Add, Button, v%var_del% gonDeletePath hwndh_del x875 y%y_pos% w30 h25, X
-                setDarkControl(h_del)
+            if (sec_name == "Paths") {
+                For i, p in data.paths {
+                    var_d := "btn_path_d_" tab_idx "_" i
+                    var_f := "btn_path_f_" tab_idx "_" i
+                    var_edit := "edit_path_" tab_idx "_" i
+                    var_del := "btn_del_path_" tab_idx "_" i
+                    Gui, Add, Edit, v%var_edit% x40 y%y_pos% w750 h25, %p%
+                    Gui, Add, Button, v%var_d% gonBrowsePathDir hwndh_d x800 y%y_pos% w30 h25, D
+                    Gui, Add, Button, v%var_f% gonBrowsePathFile hwndh_f x835 y%y_pos% w30 h25, F
+                    if (i > 1) {
+                        Gui, Add, Button, v%var_del% gonDeletePath hwndh_del x875 y%y_pos% w30 h25, X
+                        setDarkControl(h_del)
+                    }
+                    setDarkControl(h_d), setDarkControl(h_f), y_pos += 30
+                }
+                Gui, Add, Button, hwndh_addp gonAddPath x40 y%y_pos% w100 h25, + Add Path
+                setDarkControl(h_addp), y_pos += 45
+            } else if (sec_name == "Envs") {
+                For i, e in data.envs {
+                    var_n := "edit_env_name_" tab_idx "_" i
+                    var_v := "edit_env_val_" tab_idx "_" i
+                    var_d := "btn_env_d_" tab_idx "_" i
+                    var_f := "btn_env_f_" tab_idx "_" i
+                    var_del := "btn_del_env_" tab_idx "_" i
+                    Gui, Add, Edit, v%var_n% x40 y%y_pos% w200 h25, % e.name
+                    Gui, Add, Edit, v%var_v% x250 y%y_pos% w500 h25, % e.val
+                    Gui, Add, Button, v%var_d% gonBrowseEnvDir hwndh_d x760 y%y_pos% w30 h25, D
+                    Gui, Add, Button, v%var_f% gonBrowseEnvFile hwndh_f x795 y%y_pos% w30 h25, F
+                    if (i > 0) {
+                        Gui, Add, Button, v%var_del% gonDeleteEnv hwndh_del x835 y%y_pos% w30 h25, X
+                        setDarkControl(h_del)
+                    }
+                    setDarkControl(h_d), setDarkControl(h_f), y_pos += 30
+                }
+                Gui, Add, Button, hwndh_adde gonAddEnv x40 y%y_pos% w100 h25, + Add Env
+                setDarkControl(h_adde), y_pos += 45
+            } else if (sec_name == "Execs") {
+                For i, x in data.execs {
+                    var_d := "btn_exec_d_" tab_idx "_" i
+                    var_f := "btn_exec_f_" tab_idx "_" i
+                    var_edit := "edit_exec_" tab_idx "_" i
+                    var_del := "btn_del_exec_" tab_idx "_" i
+                    Gui, Add, Edit, v%var_edit% x40 y%y_pos% w750 h25, %x%
+                    Gui, Add, Button, v%var_d% gonBrowseExecDir hwndh_d x800 y%y_pos% w30 h25, D
+                    Gui, Add, Button, v%var_f% gonBrowseExecFile hwndh_f x835 y%y_pos% w30 h25, F
+                    if (i > 0) {
+                        Gui, Add, Button, v%var_del% gonDeleteExec hwndh_del x875 y%y_pos% w30 h25, X
+                        setDarkControl(h_del)
+                    }
+                    setDarkControl(h_d), setDarkControl(h_f), y_pos += 30
+                }
+                Gui, Add, Button, hwndh_addx gonAddExec x40 y%y_pos% w100 h25, + Add Exec
+                setDarkControl(h_addx), y_pos += 45
+            } else if (sec_name == "Links") {
+                label_y := y_pos + 20
+                Gui, Font, s9 c888888
+                Gui, Add, Text, x40 y%label_y%, Source
+                Gui, Add, Text, x400 y%label_y%, Target
+                Gui, Font, s10 c%font_color%
+                y_pos += 40
+                For i, l in data.links {
+                    var_d_s := "btn_link_d_s_" tab_idx "_" i
+                    var_f_s := "btn_link_f_s_" tab_idx "_" i
+                    var_d_t := "btn_link_d_t_" tab_idx "_" i
+                    var_f_t := "btn_link_f_t_" tab_idx "_" i
+                    var_e_s := "edit_link_s_" tab_idx "_" i
+                    var_e_t := "edit_link_t_" tab_idx "_" i
+                    var_del := "btn_del_link_" tab_idx "_" i
+                    Gui, Add, Edit, v%var_e_s% x40 y%y_pos% w340 h25, % l.src
+                    Gui, Add, Edit, v%var_e_t% x400 y%y_pos% w340 h25, % l.tgt
+                    Gui, Add, Button, v%var_d_s% gonBrowseLinkSD hwndh_d_s x750 y%y_pos% w30 h25, D
+                    Gui, Add, Button, v%var_f_s% gonBrowseLinkSF hwndh_f_s x785 y%y_pos% w30 h25, F
+                    Gui, Add, Button, v%var_d_t% gonBrowseLinkTD hwndh_d_t x820 y%y_pos% w30 h25, D
+                    Gui, Add, Button, v%var_f_t% gonBrowseLinkTF hwndh_f_t x855 y%y_pos% w30 h25, F
+                    if (i > 0) {
+                        Gui, Add, Button, v%var_del% gonDeleteLink hwndh_del x895 y%y_pos% w30 h25, X
+                        setDarkControl(h_del)
+                    }
+                    setDarkControl(h_d_s), setDarkControl(h_f_s), setDarkControl(h_d_t), setDarkControl(h_f_t)
+                    y_pos += 30
+                }
+                Gui, Add, Button, hwndh_addl gonAddLink x40 y%y_pos% w100 h25, + Add Link
+                setDarkControl(h_addl)
             }
-            setDarkControl(h_d), setDarkControl(h_f)
-            y_pos += 30
         }
-        Gui, Add, Button, hwndh_addp gonAddPath x40 y%y_pos% w100 h25, + Add Path
-        setDarkControl(h_addp)
-        y_pos += 45
-        
-        ; 2. ENVS
-        Gui, Font, Bold c5599FF
-        Gui, Add, Text, x40 y%y_pos%, 2. Environment Variables
-        Gui, Font, Norm c%font_color%
-        y_pos += 25
-        For i, e in data.envs {
-            var_name := "edit_env_name_" tab_idx "_" i
-            var_d := "btn_env_d_" tab_idx "_" i
-            var_f := "btn_env_f_" tab_idx "_" i
-            var_val := "edit_env_val_" tab_idx "_" i
-            var_del := "btn_del_env_" tab_idx "_" i
-            
-            Gui, Add, Edit, v%var_name% x40 y%y_pos% w200 h25, % e.name
-            Gui, Add, Edit, v%var_val% x250 y%y_pos% w500 h25, % e.val
-            Gui, Add, Button, v%var_d% gonBrowseEnvDir hwndh_d x760 y%y_pos% w30 h25, D
-            Gui, Add, Button, v%var_f% gonBrowseEnvFile hwndh_f x795 y%y_pos% w30 h25, F
-            
-            if (i > 0) { 
-                Gui, Add, Button, v%var_del% gonDeleteEnv hwndh_del x835 y%y_pos% w30 h25, X
-                setDarkControl(h_del)
-            }
-            setDarkControl(h_d), setDarkControl(h_f)
-            y_pos += 30
-        }
-        Gui, Add, Button, hwndh_adde gonAddEnv x40 y%y_pos% w100 h25, + Add Env
-        setDarkControl(h_adde)
-        y_pos += 45
-        
-        ; 3. EXECS
-        Gui, Font, Bold c5599FF
-        Gui, Add, Text, x40 y%y_pos%, 3. Configuration Executables
-        Gui, Font, Norm c%font_color%
-        y_pos += 25
-        For i, x in data.execs {
-            var_d := "btn_exec_d_" tab_idx "_" i
-            var_f := "btn_exec_f_" tab_idx "_" i
-            var_edit := "edit_exec_" tab_idx "_" i
-            var_del := "btn_del_exec_" tab_idx "_" i
-        
-            Gui, Add, Edit, v%var_edit% x40 y%y_pos% w750 h25, %x%
-            Gui, Add, Button, v%var_d% gonBrowseExecDir hwndh_d x800 y%y_pos% w30 h25, D
-            Gui, Add, Button, v%var_f% gonBrowseExecFile hwndh_f x835 y%y_pos% w30 h25, F
-            
-            if (i > 0) {
-                Gui, Add, Button, v%var_del% gonDeleteExec hwndh_del x875 y%y_pos% w30 h25, X
-                setDarkControl(h_del)
-            }
-            setDarkControl(h_d), setDarkControl(h_f)
-            y_pos += 30
-        }
-        Gui, Add, Button, hwndh_addx gonAddExec x40 y%y_pos% w100 h25, + Add Exec
-        setDarkControl(h_addx)
-        y_pos += 45
-        
-        ; 4. LINKS
-        Gui, Font, Bold c5599FF
-        Gui, Add, Text, x40 y%y_pos%, 4. Links (Symbolic/Hard)
-        
-        Gui, Font, Norm s9 c888888
-        label_y := y_pos + 20
-        Gui, Add, Text, x40 y%label_y%, Source Path
-        Gui, Add, Text, x400 y%label_y%, Target Path
-        Gui, Font, s10 c%font_color%
-        
-        y_pos += 40
-        For i, l in data.links {
-            var_d_src := "btn_link_d_src_" tab_idx "_" i
-            var_f_src := "btn_link_f_src_" tab_idx "_" i
-            var_edit_src := "edit_link_src_" tab_idx "_" i
-            var_edit_tgt := "edit_link_tgt_" tab_idx "_" i
-            var_del := "btn_del_link_" tab_idx "_" i
-        
-            Gui, Add, Edit, v%var_edit_src% x40 y%y_pos% w340 h25, % l.src
-            Gui, Add, Edit, v%var_edit_tgt% x400 y%y_pos% w340 h25, % l.tgt
-            
-            Gui, Add, Button, v%var_d_src% gonBrowseLinkSrcDir hwndh_d_src x760 y%y_pos% w30 h25, D
-            Gui, Add, Button, v%var_f_src% gonBrowseLinkSrcFile hwndh_f_src x795 y%y_pos% w30 h25, F
-            
-            if (i > 0) {
-                Gui, Add, Button, v%var_del% gonDeleteLink hwndh_del x835 y%y_pos% w30 h25, X
-                setDarkControl(h_del)
-            }
-            setDarkControl(h_d_src), setDarkControl(h_f_src)
-            y_pos += 30
-        }
-        Gui, Add, Button, hwndh_addl gonAddLink x40 y%y_pos% w100 h25, + Add Link
-        setDarkControl(h_addl)
     }
 }
 Gui, Tab 
@@ -202,10 +184,11 @@ Gui, Font, s12 Bold cFFFFFF
 Gui, Add, Button, x20 y775 w250 h55 gonManualSave hwndh_save, SAVE STATE
 Gui, Add, Button, x280 y775 w900 h55 gonApplyConfigs hwndh_apply, APPLY
 setDarkControl(h_save), setDarkControl(h_apply)
-Gui, Show, w1200 h850, System-Config v0.51
+Gui, Show, w1200 h850, System-Config v0.52
 
 SetTimer, pathTimer, 500
 return
+
 
 ; ==========================================
 ;         RIGHT-CLICK & TAB MENU LOGIC
