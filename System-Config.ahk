@@ -1,6 +1,6 @@
 ﻿/* -------------------------
-	System Configurator v0.43
-	Dynamic Reload Architecture
+    System Configurator v0.51
+    Dark UI Add buttons & Link layout fixed
 -------------------------
 */ 
 
@@ -30,7 +30,6 @@ OnMessage(0x204, "WM_RBUTTONDOWN")
 ; ==========================================
 loadState()
 
-; Construct Right-Click Context Menu
 Menu, %g_tab_menu%, Add, Add New Program Tab, onAddProgram
 Menu, %g_tab_menu%, Add, Rename Current Tab, onRenameTab
 Menu, %g_tab_menu%, Add, Delete Current Tab, onDeleteTab
@@ -39,11 +38,10 @@ Menu, %g_tab_menu%, Add, Delete Current Tab, onDeleteTab
 ;         GUI CONSTRUCTION
 ; ==========================================
 Gui, +hwndh_main_gui +LastFound
-Gui, Color, %dark_background%, %dark_background% ; Native dark theme for Window AND Edits
+Gui, Color, %dark_background%, %dark_background%
 Gui, Margin, 14, 14
 Gui, Font, s10 c%font_color%, Segoe UI
 
-; Apply Immersive Dark Mode to Window Titlebar
 DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", h_main_gui, "Int", 20, "Int*", true, "Int", 4)
 
 ; Mode Selection Button
@@ -53,24 +51,18 @@ Gui, Add, Button, vmode_btn gtoggleMode x40 y35 w250 h40 hwndh_mode, MODE: %g_cu
 setDarkControl(h_mode)
 Gui, Font, s10 Norm
 
-; Prepare Tab String
 tab_str := ""
 For tab_idx, tab_name in g_tab_names
     tab_str .= tab_name "|"
 
-; Build Tab Control
 Gui, Add, Tab3, vmain_tab gonTabChanged x20 y110 w1160 h650 hwndh_tab AltSubmit Choose%g_current_tab%, %tab_str%
 DllCall("uxtheme\SetWindowTheme", "Ptr", h_tab, "Str", "DarkMode_Explorer", "Ptr", 0)
 GuiControl, +cDDDDDD, main_tab
 
-; --- ITERATE AND BUILD ALL TABS ---
 For tab_idx, tab_name in g_tab_names 
 {
     Gui, Tab, %tab_idx% 
-    
-    if (tab_idx == 1) 
-    {
-        ; === TAB 1: WINDOWS SETTINGS ===
+    if (tab_idx == 1) {
         Gui, Font, s12 Bold c5599FF
         Gui, Add, Text, x40 y150, SYSTEM REGISTRY MODIFICATIONS
         Gui, Font, s12 Norm c%font_color%
@@ -85,119 +77,135 @@ For tab_idx, tab_name in g_tab_names
         Gui, Add, CheckBox, vchk_win_usb Checked%chk_win_usb% x40 y470 BackgroundTrans, Disable USB Selective Suspend
         Gui, Add, CheckBox, vchk_win_taskbar Checked%chk_win_taskbar% x40 y510 BackgroundTrans, Toggle Taskbar Icon Combine
         Gui, Add, CheckBox, vchk_win_widgets Checked%chk_win_widgets% x40 y550 BackgroundTrans, Disable Widgets
-        
-        Gui, Font, s10 Norm c%font_color% ; Reset font size for rest of UI
-    } 
-    else 
-    {
-        ; === DYNAMIC PROGRAM TABS ===
+
+    } else {
         data := g_tab_data[tab_name]
         y_pos := 150
         
-        ; 1. PATHS SECTION
+        ; 1. PATHS
         Gui, Font, Bold c5599FF
         Gui, Add, Text, x40 y%y_pos%, 1. Main Executable Paths
         Gui, Font, Norm c%font_color%
         y_pos += 25
         For i, p in data.paths {
+            var_d := "btn_path_d_" tab_idx "_" i
+            var_f := "btn_path_f_" tab_idx "_" i
             var_edit := "edit_path_" tab_idx "_" i
-            var_browse_d := "btn_path_d_" tab_idx "_" i
-            var_browse_f := "btn_path_f_" tab_idx "_" i
             var_del := "btn_del_path_" tab_idx "_" i
             
-            Gui, Add, Button, v%var_browse_d% gonBrowsePathDir hwndh_d x40 y%y_pos% w30 h25, D
-            Gui, Add, Button, v%var_browse_f% gonBrowsePathFile hwndh_f x75 y%y_pos% w30 h25, F
-            Gui, Add, Edit, v%var_edit% x115 y%y_pos% w800 h25, %p%
-            
-            setDarkControl(h_d), setDarkControl(h_f)
+            Gui, Add, Edit, v%var_edit% x40 y%y_pos% w750 h25, %p%
+            Gui, Add, Button, v%var_d% gonBrowsePathDir hwndh_d x800 y%y_pos% w30 h25, D
+            Gui, Add, Button, v%var_f% gonBrowsePathFile hwndh_f x835 y%y_pos% w30 h25, F
             
             if (i > 1) {
-                Gui, Add, Button, v%var_del% gonDeletePath hwndh_del x925 y%y_pos% w30 h25, X
+                Gui, Add, Button, v%var_del% gonDeletePath hwndh_del x875 y%y_pos% w30 h25, X
                 setDarkControl(h_del)
             }
+            setDarkControl(h_d), setDarkControl(h_f)
             y_pos += 30
         }
-        Gui, Add, Button, gonAddPath hwndh_addp x40 y%y_pos% w100 h25, + Add Path
+        Gui, Add, Button, hwndh_addp gonAddPath x40 y%y_pos% w100 h25, + Add Path
         setDarkControl(h_addp)
         y_pos += 45
         
-        ; 2. ENVIRONMENT VARIABLES SECTION
+        ; 2. ENVS
         Gui, Font, Bold c5599FF
         Gui, Add, Text, x40 y%y_pos%, 2. Environment Variables
         Gui, Font, Norm c%font_color%
         y_pos += 25
         For i, e in data.envs {
             var_name := "edit_env_name_" tab_idx "_" i
+            var_d := "btn_env_d_" tab_idx "_" i
+            var_f := "btn_env_f_" tab_idx "_" i
             var_val := "edit_env_val_" tab_idx "_" i
-            var_browse_d := "btn_env_d_" tab_idx "_" i
-            var_browse_f := "btn_env_f_" tab_idx "_" i
             var_del := "btn_del_env_" tab_idx "_" i
             
             Gui, Add, Edit, v%var_name% x40 y%y_pos% w200 h25, % e.name
-            
-            Gui, Add, Button, v%var_browse_d% gonBrowseEnvDir hwndh_d x250 y%y_pos% w30 h25, D
-            Gui, Add, Button, v%var_browse_f% gonBrowseEnvFile hwndh_f x285 y%y_pos% w30 h25, F
-            
-            Gui, Add, Edit, v%var_val% x325 y%y_pos% w590 h25, % e.val
-            
-            setDarkControl(h_d), setDarkControl(h_f)
+            Gui, Add, Edit, v%var_val% x250 y%y_pos% w500 h25, % e.val
+            Gui, Add, Button, v%var_d% gonBrowseEnvDir hwndh_d x760 y%y_pos% w30 h25, D
+            Gui, Add, Button, v%var_f% gonBrowseEnvFile hwndh_f x795 y%y_pos% w30 h25, F
             
             if (i > 0) { 
-                Gui, Add, Button, v%var_del% gonDeleteEnv hwndh_del x925 y%y_pos% w30 h25, X
+                Gui, Add, Button, v%var_del% gonDeleteEnv hwndh_del x835 y%y_pos% w30 h25, X
                 setDarkControl(h_del)
             }
+            setDarkControl(h_d), setDarkControl(h_f)
             y_pos += 30
         }
-        Gui, Add, Button, gonAddEnv hwndh_adde x40 y%y_pos% w100 h25, + Add Env
+        Gui, Add, Button, hwndh_adde gonAddEnv x40 y%y_pos% w100 h25, + Add Env
         setDarkControl(h_adde)
         y_pos += 45
         
-        ; 3. CONFIGURATION EXECUTABLES SECTION
+        ; 3. EXECS
         Gui, Font, Bold c5599FF
         Gui, Add, Text, x40 y%y_pos%, 3. Configuration Executables
         Gui, Font, Norm c%font_color%
         y_pos += 25
         For i, x in data.execs {
+            var_d := "btn_exec_d_" tab_idx "_" i
+            var_f := "btn_exec_f_" tab_idx "_" i
             var_edit := "edit_exec_" tab_idx "_" i
-            var_browse_d := "btn_exec_d_" tab_idx "_" i
-            var_browse_f := "btn_exec_f_" tab_idx "_" i
             var_del := "btn_del_exec_" tab_idx "_" i
-            
-            Gui, Add, Button, v%var_browse_d% gonBrowseExecDir hwndh_d x40 y%y_pos% w30 h25, D
-            Gui, Add, Button, v%var_browse_f% gonBrowseExecFile hwndh_f x75 y%y_pos% w30 h25, F
-            Gui, Add, Edit, v%var_edit% x115 y%y_pos% w800 h25, %x%
-            
-            setDarkControl(h_d), setDarkControl(h_f)
+        
+            Gui, Add, Edit, v%var_edit% x40 y%y_pos% w750 h25, %x%
+            Gui, Add, Button, v%var_d% gonBrowseExecDir hwndh_d x800 y%y_pos% w30 h25, D
+            Gui, Add, Button, v%var_f% gonBrowseExecFile hwndh_f x835 y%y_pos% w30 h25, F
             
             if (i > 0) {
-                Gui, Add, Button, v%var_del% gonDeleteExec hwndh_del x925 y%y_pos% w30 h25, X
+                Gui, Add, Button, v%var_del% gonDeleteExec hwndh_del x875 y%y_pos% w30 h25, X
                 setDarkControl(h_del)
             }
+            setDarkControl(h_d), setDarkControl(h_f)
             y_pos += 30
         }
-        Gui, Add, Button, gonAddExec hwndh_addx x40 y%y_pos% w100 h25, + Add Exec
+        Gui, Add, Button, hwndh_addx gonAddExec x40 y%y_pos% w100 h25, + Add Exec
         setDarkControl(h_addx)
+        y_pos += 45
+        
+        ; 4. LINKS
+        Gui, Font, Bold c5599FF
+        Gui, Add, Text, x40 y%y_pos%, 4. Links (Symbolic/Hard)
+        
+        Gui, Font, Norm s9 c888888
+        label_y := y_pos + 20
+        Gui, Add, Text, x40 y%label_y%, Source Path
+        Gui, Add, Text, x400 y%label_y%, Target Path
+        Gui, Font, s10 c%font_color%
+        
+        y_pos += 40
+        For i, l in data.links {
+            var_d_src := "btn_link_d_src_" tab_idx "_" i
+            var_f_src := "btn_link_f_src_" tab_idx "_" i
+            var_edit_src := "edit_link_src_" tab_idx "_" i
+            var_edit_tgt := "edit_link_tgt_" tab_idx "_" i
+            var_del := "btn_del_link_" tab_idx "_" i
+        
+            Gui, Add, Edit, v%var_edit_src% x40 y%y_pos% w340 h25, % l.src
+            Gui, Add, Edit, v%var_edit_tgt% x400 y%y_pos% w340 h25, % l.tgt
+            
+            Gui, Add, Button, v%var_d_src% gonBrowseLinkSrcDir hwndh_d_src x760 y%y_pos% w30 h25, D
+            Gui, Add, Button, v%var_f_src% gonBrowseLinkSrcFile hwndh_f_src x795 y%y_pos% w30 h25, F
+            
+            if (i > 0) {
+                Gui, Add, Button, v%var_del% gonDeleteLink hwndh_del x835 y%y_pos% w30 h25, X
+                setDarkControl(h_del)
+            }
+            setDarkControl(h_d_src), setDarkControl(h_f_src)
+            y_pos += 30
+        }
+        Gui, Add, Button, hwndh_addl gonAddLink x40 y%y_pos% w100 h25, + Add Link
+        setDarkControl(h_addl)
     }
 }
-
 Gui, Tab 
-
 Gui, Font, s12 Bold cFFFFFF
-Gui, Add, Button, x20 y775 w250 h55 gonManualSave hwndh_save, SAVE STATE TO INI
-Gui, Add, Button, x280 y775 w900 h55 gonApplyConfigs hwndh_apply, APPLY CONFIGURATIONS
+Gui, Add, Button, x20 y775 w250 h55 gonManualSave hwndh_save, SAVE STATE
+Gui, Add, Button, x280 y775 w900 h55 gonApplyConfigs hwndh_apply, APPLY
 setDarkControl(h_save), setDarkControl(h_apply)
+Gui, Show, w1200 h850, System-Config v0.51
 
-Gui, Show, w1200 h850, Windows 11 Configurator PRO
-
-; Start the background path verifier
 SetTimer, pathTimer, 500
 return
-
-GuiClose:
-    captureCurrentTabRows()
-    saveState()
-ExitApp
-
 
 ; ==========================================
 ;         RIGHT-CLICK & TAB MENU LOGIC
@@ -227,17 +235,14 @@ onAddProgram:
     if (exe_path == "")
         return
         
-    ; Capture BEFORE pushing new tab so we don't accidentally blank out rows
     captureCurrentTabRows()
         
-    ; Automatically extract Parent Folder Name for the Tab Title
     SplitPath, exe_path, out_file_name, out_dir, out_ext, out_name_no_ext
     SplitPath, out_dir, out_folder_name
     tab_name := out_folder_name
     if (tab_name == "")
         tab_name := out_name_no_ext 
         
-    ; Prevent duplicate tab names
     Loop {
         is_dup := false
         For k, v in g_tab_names {
@@ -252,7 +257,7 @@ onAddProgram:
     }
     
     g_tab_names.Push(tab_name)
-    g_tab_data[tab_name] := {"paths": [exe_path], "envs": [], "execs": []}
+    g_tab_data[tab_name] := {"paths": [exe_path], "envs": [], "execs": [], "links": []}
     g_current_tab := g_tab_names.Length() 
     
     saveState()
@@ -302,6 +307,8 @@ return
 ; ==========================================
 onAddPath:
     captureCurrentTabRows()
+    if (!IsObject(g_tab_data[g_tab_names[g_current_tab]].paths))
+        g_tab_data[g_tab_names[g_current_tab]].paths := []
     g_tab_data[g_tab_names[g_current_tab]].paths.Push("")
     saveState()
     Reload
@@ -309,6 +316,8 @@ return
 
 onAddEnv:
     captureCurrentTabRows()
+    if (!IsObject(g_tab_data[g_tab_names[g_current_tab]].envs))
+        g_tab_data[g_tab_names[g_current_tab]].envs := []
     g_tab_data[g_tab_names[g_current_tab]].envs.Push({"name":"", "val":""})
     saveState()
     Reload
@@ -316,7 +325,18 @@ return
 
 onAddExec:
     captureCurrentTabRows()
+    if (!IsObject(g_tab_data[g_tab_names[g_current_tab]].execs))
+        g_tab_data[g_tab_names[g_current_tab]].execs := []
     g_tab_data[g_tab_names[g_current_tab]].execs.Push("")
+    saveState()
+    Reload
+return
+
+onAddLink:
+    captureCurrentTabRows()
+    if (!IsObject(g_tab_data[g_tab_names[g_current_tab]].links))
+        g_tab_data[g_tab_names[g_current_tab]].links := []
+    g_tab_data[g_tab_names[g_current_tab]].links.Push({"src":"", "tgt":""})
     saveState()
     Reload
 return
@@ -344,6 +364,15 @@ onDeleteExec:
     tab_idx := parts[4], row_idx := parts[5]
     captureCurrentTabRows()
     g_tab_data[g_tab_names[tab_idx]].execs.RemoveAt(row_idx)
+    saveState()
+    Reload
+return
+
+onDeleteLink:
+    parts := StrSplit(A_GuiControl, "_")
+    tab_idx := parts[4], row_idx := parts[5]
+    captureCurrentTabRows()
+    g_tab_data[g_tab_names[tab_idx]].links.RemoveAt(row_idx)
     saveState()
     Reload
 return
@@ -379,6 +408,16 @@ onBrowseEnvDir:
         GuiControl,, %var_edit%, %selected%
 return
 
+onBrowseLinkSrcDir:
+    parts := StrSplit(A_GuiControl, "_")
+    tab_idx := parts[5], row_idx := parts[6]
+    var_edit := "edit_link_src_" tab_idx "_" row_idx
+    GuiControlGet, current_val,, %var_edit%
+    FileSelectFolder, selected, *%current_val%, 3, Select Source Folder
+    if (selected != "")
+        GuiControl,, %var_edit%, %selected%
+return
+
 ; --- BROWSE FILES ---
 onBrowsePathFile:
     parts := StrSplit(A_GuiControl, "_")
@@ -410,6 +449,16 @@ onBrowseEnvFile:
         GuiControl,, %var_edit%, %selected%
 return
 
+onBrowseLinkSrcFile:
+    parts := StrSplit(A_GuiControl, "_")
+    tab_idx := parts[5], row_idx := parts[6]
+    var_edit := "edit_link_src_" tab_idx "_" row_idx
+    GuiControlGet, current_val,, %var_edit%
+    FileSelectFile, selected, 3, %current_val%, Select Source File
+    if (selected != "")
+        GuiControl,, %var_edit%, %selected%
+return
+
 
 ; ==========================================
 ;         LIVE PATH VERIFICATION
@@ -431,11 +480,11 @@ checkPaths() {
             break
         if (path_val != "") {
             if FileExist(path_val)
-                GuiControl, +c55FF55, %edit_var% ; Green
+                GuiControl, +c55FF55, %edit_var%
             else
-                GuiControl, +cFF4444, %edit_var% ; Red
+                GuiControl, +cFF4444, %edit_var%
         } else {
-            GuiControl, +cD6D6D6, %edit_var% ; Default Gray
+            GuiControl, +cD6D6D6, %edit_var%
         }
     }
     
@@ -461,7 +510,6 @@ checkPaths() {
         GuiControlGet, path_val,, %edit_var%
         if (ErrorLevel) 
             break
-        ; Only colorize if it looks like a path (contains :\ or \\)
         if (path_val != "" && (InStr(path_val, ":\") || InStr(path_val, "\\"))) {
             if FileExist(path_val)
                 GuiControl, +c55FF55, %edit_var%
@@ -469,6 +517,34 @@ checkPaths() {
                 GuiControl, +cFF4444, %edit_var%
         } else {
             GuiControl, +cD6D6D6, %edit_var%
+        }
+    }
+    
+    ; Scan links block
+    Loop, 50 {
+        edit_src := "edit_link_src_" g_current_tab "_" A_Index
+        edit_tgt := "edit_link_tgt_" g_current_tab "_" A_Index
+        GuiControlGet, src_val,, %edit_src%
+        if (ErrorLevel) 
+            break
+            
+        if (src_val != "") {
+            if FileExist(src_val)
+                GuiControl, +c55FF55, %edit_src%
+            else
+                GuiControl, +cFF4444, %edit_src%
+        } else {
+            GuiControl, +cD6D6D6, %edit_src%
+        }
+        
+        GuiControlGet, tgt_val,, %edit_tgt%
+        if (tgt_val != "") {
+            if FileExist(tgt_val)
+                GuiControl, +c55FF55, %edit_tgt%
+            else
+                GuiControl, +cFF4444, %edit_tgt%
+        } else {
+            GuiControl, +cD6D6D6, %edit_tgt%
         }
     }
 }
@@ -488,6 +564,11 @@ onApplyConfigs:
     saveState()
     MsgBox, 64, Apply, Executing %g_current_mode% operations based on loaded configurations. (Placeholder)
 return
+
+GuiClose:
+    captureCurrentTabRows()
+    saveState()
+ExitApp
 
 captureCurrentTabRows() {
     global
@@ -512,6 +593,12 @@ captureCurrentTabRows() {
         For i, x in data.execs {
             var_edit := "edit_exec_" tab_idx "_" i
             data.execs[i] := %var_edit%
+        }
+        For i, l in data.links {
+            var_src := "edit_link_src_" tab_idx "_" i
+            var_tgt := "edit_link_tgt_" tab_idx "_" i
+            data.links[i].src := %var_src%
+            data.links[i].tgt := %var_tgt%
         }
     }
 }
@@ -549,6 +636,11 @@ saveState() {
         
         For i, x in data.execs
             IniWrite, %x%, %g_ini_file%, %tab_name%_Execs, %i%
+            
+        For i, l in data.links {
+            IniWrite, % l.src, %g_ini_file%, %tab_name%_Links, %i%_Src
+            IniWrite, % l.tgt, %g_ini_file%, %tab_name%_Links, %i%_Tgt
+        }
     }
 }
 
@@ -578,7 +670,7 @@ loadState() {
         if (k == 1)
             continue
             
-        g_tab_data[tab_name] := {"paths":[], "envs":[], "execs":[]}
+        g_tab_data[tab_name] := {"paths":[], "envs":[], "execs":[], "links":[]}
         
         Loop {
             IniRead, val, %g_ini_file%, %tab_name%_Paths, %A_Index%, ||END||
@@ -602,6 +694,21 @@ loadState() {
             if (x == "||END||")
                 break
             g_tab_data[tab_name].execs.Push(x)
+        }
+        
+        Loop {
+            ; Try reading the new format first (Src/Tgt)
+            IniRead, src, %g_ini_file%, %tab_name%_Links, %A_Index%_Src, ||END||
+            if (src == "||END||") {
+                ; Backwards compatibility fallback if it's an old string link
+                IniRead, l, %g_ini_file%, %tab_name%_Links, %A_Index%, ||END||
+                if (l == "||END||")
+                    break
+                g_tab_data[tab_name].links.Push({"src": l, "tgt": ""})
+            } else {
+                IniRead, tgt, %g_ini_file%, %tab_name%_Links, %A_Index%_Tgt, %A_Space%
+                g_tab_data[tab_name].links.Push({"src": src, "tgt": tgt})
+            }
         }
     }
 }
