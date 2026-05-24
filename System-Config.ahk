@@ -1,6 +1,6 @@
-﻿/* -------------------------
-    System Configurator v0.59
-    Execution Engine & Shortcuts
+/* -------------------------
+    System Configurator v0.61
+    UI Scaling, Env Validation & Execution Polish
 -------------------------
 */ 
 
@@ -21,7 +21,10 @@ global g_tab_menu        := "TabMenu"
 global dark_background := "1E1E1E"
 global font_color := "D6D6D6"
 
-; Dynamic Registry Options Array (Now grouped by section)
+; State tracking for bug-free path redraws
+global g_path_states := {}
+
+; Dynamic Registry Options Array
 global g_win_sections := {}
 global g_win_section_names := []
 
@@ -42,29 +45,41 @@ Menu, %g_tab_menu%, Add, Add New Program Tab, onAddProgram
 Menu, %g_tab_menu%, Add, Rename Current Tab, onRenameTab
 Menu, %g_tab_menu%, Add, Delete Current Tab, onDeleteTab
 
+global mode_color := (g_current_mode == "Config") ? "FF9900" : "5599FF"
+
 ; ==========================================
 ;         GUI CONSTRUCTION
 ; ==========================================
 Gui, +hwndh_main_gui +LastFound
 Gui, Color, %dark_background%, %dark_background%
 Gui, Margin, 14, 14
-Gui, Font, s10 c%font_color%, Segoe UI
+; Increased base font size
+Gui, Font, s12 c%font_color%, Segoe UI
 
 DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", h_main_gui, "Int", 20, "Int*", true, "Int", 4)
 
 ; Mode Selection & Save State at TOP
-Gui, Add, GroupBox, x20 y10 w1160 h80 c%font_color%, Execution Mode
+Gui, Add, GroupBox, x20 y10 w1160 h80 c%mode_color%, Execution Mode
 Gui, Font, s12 Bold
 Gui, Add, Button, vmode_btn gtoggleMode x40 y35 w250 h40 hwndh_mode, MODE: %g_current_mode%
-Gui, Add, Button, gonManualSave x300 y35 w250 h40 hwndh_save, SAVE STATE
-setDarkControl(h_mode), setDarkControl(h_save)
-Gui, Font, s10 Norm
+
+; Toggle SAVE STATE vs APPLY ALL based on Mode
+if (g_current_mode == "Config") {
+    Gui, Add, Button, gonManualSave x300 y35 w250 h40 hwndh_save, SAVE STATE
+    setDarkControl(h_save)
+} else {
+    Gui, Add, Button, x300 y35 w250 h40 gonApplyConfigs hwndh_apply, APPLY ALL
+    setDarkControl(h_apply)
+}
+setDarkControl(h_mode)
+Gui, Font, s12 Norm
 
 tab_str := ""
 For tab_idx, tab_name in g_tab_names
     tab_str .= tab_name "|"
 
-Gui, Add, Tab3, vmain_tab gonTabChanged x20 y110 w1160 h650 hwndh_tab AltSubmit Choose%g_current_tab%, %tab_str%
+; Increased height for tabs slightly to accommodate larger fonts
+Gui, Add, Tab3, vmain_tab gonTabChanged x20 y110 w1160 h670 hwndh_tab AltSubmit Choose%g_current_tab%, %tab_str%
 DllCall("uxtheme\SetWindowTheme", "Ptr", h_tab, "Str", "DarkMode_Explorer", "Ptr", 0)
 GuiControl, +cDDDDDD, main_tab
 
@@ -72,13 +87,12 @@ For tab_idx, tab_name in g_tab_names
 {
     Gui, Tab, %tab_idx% 
     if (tab_idx == 1) {
-        y_pos := 150
+        y_pos := 155
         
         For _, sec_name in g_win_section_names {
-            ; Large Orange Section Label
-            Gui, Font, s14 Bold cFF9900
+            Gui, Font, s15 Bold c%mode_color%
             Gui, Add, Text, x40 y%y_pos%, %sec_name%
-            Gui, Font, s11 Norm c%font_color%
+            Gui, Font, s12 Norm c%font_color%
             y_pos += 35
             
             opts := g_win_sections[sec_name]
@@ -86,156 +100,190 @@ For tab_idx, tab_name in g_tab_names
                 var_id := opt.id
                 chk_state := opt.state
                 Gui, Add, CheckBox, v%var_id% Checked%chk_state% x60 y%y_pos% BackgroundTrans, % opt.name
-                y_pos += 30
+                y_pos += 32
             }
-            y_pos += 15 ; Spacing between sections
+            y_pos += 15
         }
 
-        ; Tab Specific Apply Button
-        Gui, Font, Bold s12 cFFFFFF
-        hwnd_var := "h_app_" tab_idx
-        Gui, Add, Button, hwnd%hwnd_var% gonApplyCurrentTab x920 y700 w240 h40, Apply WINDOWS
-        handle := %hwnd_var%
-        setDarkControl(handle)
-        Gui, Font, Norm s10 c%font_color%
+        if (g_current_mode == "Apply") {
+            Gui, Font, Bold s12 cFFFFFF
+            hwnd_var := "h_app_" tab_idx
+            Gui, Add, Button, hwnd%hwnd_var% gonApplyCurrentTab x920 y720 w240 h40, Apply WINDOWS
+            handle := %hwnd_var%
+            setDarkControl(handle)
+            Gui, Font, Norm s12 c%font_color%
+        }
 
     } else {
         data := g_tab_data[tab_name]
-        y_pos := 150
+        y_pos := 155
         
         ; SECTION BUILDER LOGIC
         sections := ["Paths", "Envs", "Execs", "Links"]
         For sec_idx, sec_name in sections {
-            Gui, Font, Bold s14 c5599FF
+            Gui, Font, Bold s15 c%mode_color%
             Gui, Add, Text, x40 y%y_pos%, %sec_idx%. %sec_name%
-            Gui, Font, Norm s10 c%font_color%
-            y_pos += 35
+            Gui, Font, Norm s12 c%font_color%
+            y_pos += 38
             
             if (sec_name == "Paths") {
                 For i, path_item in data.paths {
                     path_name := path_item.name
                     path_value := path_item.val
-                    
                     var_n := "edit_path_name_" tab_idx "_" i
                     var_edit := "edit_path_" tab_idx "_" i
-                    var_d := "btn_path_d_" tab_idx "_" i
-                    var_f := "btn_path_f_" tab_idx "_" i
-                    var_del := "btn_del_path_" tab_idx "_" i
                     
-                    Gui, Add, Edit, v%var_n% x40 y%y_pos% w180 h25, %path_name%
-                    Gui, Add, Edit, v%var_edit% x230 y%y_pos% w560 h25, %path_value%
-                    
-                    Gui, Add, Button, v%var_d% gonBrowsePathDir hwndh_d x800 y%y_pos% w30 h25, D
-                    Gui, Add, Button, v%var_f% gonBrowsePathFile hwndh_f x835 y%y_pos% w30 h25, F
-                    
-                    if (i > 1) {
-                        Gui, Add, Button, v%var_del% gonDeletePath hwndh_del x875 y%y_pos% w30 h25, X
-                        setDarkControl(h_del)
+                    if (g_current_mode == "Config") {
+                        var_d := "btn_path_d_" tab_idx "_" i
+                        var_f := "btn_path_f_" tab_idx "_" i
+                        var_del := "btn_del_path_" tab_idx "_" i
+                        Gui, Add, Edit, v%var_n% x40 y%y_pos% w180 h28, %path_name%
+                        Gui, Add, Edit, v%var_edit% x230 y%y_pos% w560 h28, %path_value%
+                        Gui, Add, Button, v%var_d% gonBrowsePathDir hwndh_d x800 y%y_pos% w30 h28, D
+                        Gui, Add, Button, v%var_f% gonBrowsePathFile hwndh_f x835 y%y_pos% w30 h28, F
+                        if (i > 1) {
+                            Gui, Add, Button, v%var_del% gonDeletePath hwndh_del x875 y%y_pos% w30 h28, X
+                            setDarkControl(h_del)
+                        }
+                        setDarkControl(h_d), setDarkControl(h_f)
+                    } else {
+                        Gui, Add, Text, v%var_n% x40 y%y_pos% w180 h28 c%font_color%, %path_name%
+                        Gui, Add, Text, v%var_edit% x230 y%y_pos% w800 h28 c%font_color%, %path_value%
                     }
-                    setDarkControl(h_d), setDarkControl(h_f)
-                    y_pos += 30
+                    y_pos += 33
                 }
-                Gui, Add, Button, hwndh_addp gonAddPath x40 y%y_pos% w100 h25, + Add Path
-                setDarkControl(h_addp), y_pos += 45
+                if (g_current_mode == "Config") {
+                    Gui, Add, Button, hwndh_addp gonAddPath x40 y%y_pos% w100 h28, + Add Path
+                    setDarkControl(h_addp), y_pos += 45
+                }
                 
             } else if (sec_name == "Envs") {
                 For i, e in data.envs {
                     var_n := "edit_env_name_" tab_idx "_" i
                     var_v := "edit_env_val_" tab_idx "_" i
-                    var_d := "btn_env_d_" tab_idx "_" i
-                    var_f := "btn_env_f_" tab_idx "_" i
-                    var_del := "btn_del_env_" tab_idx "_" i
                     
-                    Gui, Add, Edit, v%var_n% x40 y%y_pos% w200 h25, % e.name
-                    Gui, Add, Edit, v%var_v% x250 y%y_pos% w500 h25, % e.val
-                    
-                    Gui, Add, Button, v%var_d% gonBrowseEnvDir hwndh_d x760 y%y_pos% w30 h25, D
-                    Gui, Add, Button, v%var_f% gonBrowseEnvFile hwndh_f x795 y%y_pos% w30 h25, F
-                    
-                    if (i > 0) {
-                        Gui, Add, Button, v%var_del% gonDeleteEnv hwndh_del x835 y%y_pos% w30 h25, X
-                        setDarkControl(h_del)
+                    if (g_current_mode == "Config") {
+                        var_d := "btn_env_d_" tab_idx "_" i
+                        var_f := "btn_env_f_" tab_idx "_" i
+                        var_del := "btn_del_env_" tab_idx "_" i
+                        Gui, Add, Edit, v%var_n% x40 y%y_pos% w200 h28, % e.name
+                        Gui, Add, Edit, v%var_v% x250 y%y_pos% w500 h28, % e.val
+                        Gui, Add, Button, v%var_d% gonBrowseEnvDir hwndh_d x760 y%y_pos% w30 h28, D
+                        Gui, Add, Button, v%var_f% gonBrowseEnvFile hwndh_f x795 y%y_pos% w30 h28, F
+                        if (i > 0) {
+                            Gui, Add, Button, v%var_del% gonDeleteEnv hwndh_del x835 y%y_pos% w30 h28, X
+                            setDarkControl(h_del)
+                        }
+                        setDarkControl(h_d), setDarkControl(h_f)
+                    } else {
+                        Gui, Font, Bold
+                        Gui, Add, Text, v%var_n% x40 y%y_pos% w200 h28 c%font_color%, % e.name
+                        Gui, Font, Norm
+                        Gui, Add, Text, v%var_v% x250 y%y_pos% w780 h28 c%font_color%, % e.val
                     }
-                    setDarkControl(h_d), setDarkControl(h_f), y_pos += 30
+                    y_pos += 33
                 }
-                Gui, Add, Button, hwndh_adde gonAddEnv x40 y%y_pos% w100 h25, + Add Env
-                setDarkControl(h_adde), y_pos += 45
+                if (g_current_mode == "Config") {
+                    Gui, Add, Button, hwndh_adde gonAddEnv x40 y%y_pos% w100 h28, + Add Env
+                    setDarkControl(h_adde), y_pos += 45
+                }
                 
             } else if (sec_name == "Execs") {
                 For i, x in data.execs {
-                    var_d := "btn_exec_d_" tab_idx "_" i
-                    var_f := "btn_exec_f_" tab_idx "_" i
                     var_edit := "edit_exec_" tab_idx "_" i
-                    var_del := "btn_del_exec_" tab_idx "_" i
-                    
-                    Gui, Add, Edit, v%var_edit% x40 y%y_pos% w750 h25, %x%
-                    Gui, Add, Button, v%var_d% gonBrowseExecDir hwndh_d x800 y%y_pos% w30 h25, D
-                    Gui, Add, Button, v%var_f% gonBrowseExecFile hwndh_f x835 y%y_pos% w30 h25, F
-                    
-                    if (i > 0) {
-                        Gui, Add, Button, v%var_del% gonDeleteExec hwndh_del x875 y%y_pos% w30 h25, X
-                        setDarkControl(h_del)
+                    if (g_current_mode == "Config") {
+                        var_d := "btn_exec_d_" tab_idx "_" i
+                        var_f := "btn_exec_f_" tab_idx "_" i
+                        var_del := "btn_del_exec_" tab_idx "_" i
+                        Gui, Add, Edit, v%var_edit% x40 y%y_pos% w750 h28, %x%
+                        Gui, Add, Button, v%var_d% gonBrowseExecDir hwndh_d x800 y%y_pos% w30 h28, D
+                        Gui, Add, Button, v%var_f% gonBrowseExecFile hwndh_f x835 y%y_pos% w30 h28, F
+                        if (i > 0) {
+                            Gui, Add, Button, v%var_del% gonDeleteExec hwndh_del x875 y%y_pos% w30 h28, X
+                            setDarkControl(h_del)
+                        }
+                        setDarkControl(h_d), setDarkControl(h_f)
+                    } else {
+                        Gui, Add, Text, v%var_edit% x40 y%y_pos% w990 h28 c%font_color%, %x%
                     }
-                    setDarkControl(h_d), setDarkControl(h_f), y_pos += 30
+                    y_pos += 33
                 }
-                Gui, Add, Button, hwndh_addx gonAddExec x40 y%y_pos% w100 h25, + Add Exec
-                setDarkControl(h_addx), y_pos += 45
+                if (g_current_mode == "Config") {
+                    Gui, Add, Button, hwndh_addx gonAddExec x40 y%y_pos% w100 h28, + Add Exec
+                    setDarkControl(h_addx), y_pos += 45
+                }
                 
             } else if (sec_name == "Links") {
                 if (data.links.Length() > 0) {
                     label_y := y_pos + 5
                     Gui, Font, Bold s12 c888888
-                    Gui, Add, Text, x40 y%label_y%, Source
-                    Gui, Add, Text, x420 y%label_y%, Target Folder
-                    Gui, Add, Text, x765 y%label_y%, Target Name
-                    Gui, Font, Norm s10 c%font_color%
-                    y_pos += 30
+                    if (g_current_mode == "Config") {
+                        Gui, Add, Text, x40 y%label_y%, Source
+                        Gui, Add, Text, x420 y%label_y%, Target Folder
+                        Gui, Add, Text, x765 y%label_y%, Target Name
+                    } else {
+                        Gui, Add, Text, x40 y%label_y%, Source
+                        Gui, Add, Text, x420 y%label_y%, Deployed Link Path
+                    }
+                    Gui, Font, Norm s12 c%font_color%
+                    y_pos += 33
                 }
                 
                 For i, l in data.links {
-                    var_d_s := "btn_link_d_s_" tab_idx "_" i
-                    var_f_s := "btn_link_f_s_" tab_idx "_" i
-                    var_d_t := "btn_link_d_t_" tab_idx "_" i
                     var_e_s := "edit_link_s_" tab_idx "_" i
                     var_e_td := "edit_link_tdir_" tab_idx "_" i
-                    var_e_tn := "edit_link_tname_" tab_idx "_" i
-                    var_del := "btn_del_link_" tab_idx "_" i
                     
-                    Gui, Add, Edit, v%var_e_s% x40 y%y_pos% w300 h25, % l.src
-                    Gui, Add, Button, v%var_d_s% gonBrowseLinkSD hwndh_d_s x345 y%y_pos% w30 h25, D
-                    Gui, Add, Button, v%var_f_s% gonBrowseLinkSF hwndh_f_s x380 y%y_pos% w30 h25, F
-                    
-                    Gui, Add, Edit, v%var_e_td% x420 y%y_pos% w300 h25, % l.tgt_dir
-                    Gui, Add, Button, v%var_d_t% gonBrowseLinkTD hwndh_d_t x725 y%y_pos% w30 h25, D
-                    
-                    Gui, Add, Edit, v%var_e_tn% x765 y%y_pos% w250 h25, % l.tgt_name
-                    
-                    if (i > 0) {
-                        Gui, Add, Button, v%var_del% gonDeleteLink hwndh_del x1025 y%y_pos% w30 h25, X
-                        setDarkControl(h_del)
+                    if (g_current_mode == "Config") {
+                        var_e_tn := "edit_link_tname_" tab_idx "_" i
+                        var_d_s := "btn_link_d_s_" tab_idx "_" i
+                        var_f_s := "btn_link_f_s_" tab_idx "_" i
+                        var_d_t := "btn_link_d_t_" tab_idx "_" i
+                        var_del := "btn_del_link_" tab_idx "_" i
+                        
+                        Gui, Add, Edit, v%var_e_s% x40 y%y_pos% w300 h28, % l.src
+                        Gui, Add, Button, v%var_d_s% gonBrowseLinkSD hwndh_d_s x345 y%y_pos% w30 h28, D
+                        Gui, Add, Button, v%var_f_s% gonBrowseLinkSF hwndh_f_s x380 y%y_pos% w30 h28, F
+                        Gui, Add, Edit, v%var_e_td% x420 y%y_pos% w300 h28, % l.tgt_dir
+                        Gui, Add, Button, v%var_d_t% gonBrowseLinkTD hwndh_d_t x725 y%y_pos% w30 h28, D
+                        Gui, Add, Edit, v%var_e_tn% x765 y%y_pos% w250 h28, % l.tgt_name
+                        
+                        if (i > 0) {
+                            Gui, Add, Button, v%var_del% gonDeleteLink hwndh_del x1025 y%y_pos% w30 h28, X
+                            setDarkControl(h_del)
+                        }
+                        setDarkControl(h_d_s), setDarkControl(h_f_s), setDarkControl(h_d_t)
+                    } else {
+                        if (l.tgt_dir != "")
+                            full_tgt := l.tgt_dir . (SubStr(l.tgt_dir, 0) == "\" ? "" : "\") . l.tgt_name
+                        else
+                            full_tgt := l.tgt_name
+                        if (!InStr(full_tgt, ".lnk"))
+                            full_tgt .= ".lnk"
+                        
+                        Gui, Add, Text, v%var_e_s% x40 y%y_pos% w360 h28 c%font_color%, % l.src
+                        Gui, Add, Text, v%var_e_td% x420 y%y_pos% w650 h28 c%font_color%, % full_tgt
                     }
-                    setDarkControl(h_d_s), setDarkControl(h_f_s), setDarkControl(h_d_t)
-                    y_pos += 30
+                    y_pos += 33
                 }
-                Gui, Add, Button, hwndh_addl gonAddLink x40 y%y_pos% w100 h25, + Add Link
-                setDarkControl(h_addl)
+                if (g_current_mode == "Config") {
+                    Gui, Add, Button, hwndh_addl gonAddLink x40 y%y_pos% w100 h28, + Add Link
+                    setDarkControl(h_addl)
+                }
             }
         }
         
-        ; Tab Specific Apply Button
-        Gui, Font, Bold s12 cFFFFFF
-        hwnd_var := "h_app_" tab_idx
-        Gui, Add, Button, hwnd%hwnd_var% gonApplyCurrentTab x920 y700 w240 h40, Apply %tab_name%
-        handle := %hwnd_var%
-        setDarkControl(handle)
-        Gui, Font, Norm s10 c%font_color%
+        if (g_current_mode == "Apply") {
+            Gui, Font, Bold s12 cFFFFFF
+            hwnd_var := "h_app_" tab_idx
+            Gui, Add, Button, hwnd%hwnd_var% gonApplyCurrentTab x920 y720 w240 h40, Apply %tab_name%
+            handle := %hwnd_var%
+            setDarkControl(handle)
+            Gui, Font, Norm s12 c%font_color%
+        }
     }
 }
 Gui, Tab 
-Gui, Font, s12 Bold cFFFFFF
-Gui, Add, Button, x20 y775 w1160 h55 gonApplyConfigs hwndh_apply, APPLY ALL
-setDarkControl(h_apply)
-Gui, Show, w1200 h850, System-Config v0.59
+Gui, Show, w1200 h800, System-Config v0.61
 
 SetTimer, pathTimer, 500
 return
@@ -245,32 +293,23 @@ return
 ; ==========================================
 scanRegistryDirectory() {
     global g_reg_dir, g_win_sections, g_win_section_names
-    
     chk_index := 1
-    
     Loop, Files, %g_reg_dir%\*, D
     {
         sectionFolder := A_LoopFileName
-        
-        ; Format Section Name
         secName := StrReplace(sectionFolder, "-", " ")
         secName := StrReplace(secName, "_", " ")
         StringUpper, secName, secName, T 
-        
         g_win_section_names.Push(secName)
         g_win_sections[secName] := []
         
         Loop, Files, %g_reg_dir%\%sectionFolder%\*, D
         {
             optFolder := A_LoopFileName
-            
-            ; Format Option Name
             optName := StrReplace(optFolder, "-", " ")
             optName := StrReplace(optName, "_", " ")
             StringUpper, optName, optName, T 
-            
             varName := "chk_win_" chk_index
-            
             g_win_sections[secName].Push({"id": varName, "path": sectionFolder "\" optFolder, "name": optName, "state": 0, "initial_state": 0})
             chk_index++
         }
@@ -295,24 +334,23 @@ return
 
 toggleMode:
     Gui, Submit, NoHide
-    g_current_mode := (g_current_mode == "Config") ? "Restore" : "Config"
-    GuiControl,, mode_btn, MODE: %g_current_mode%
+    captureCurrentTabRows()
+    saveState()
+    g_current_mode := (g_current_mode == "Config") ? "Apply" : "Config"
     IniWrite, %g_current_mode%, %g_ini_file%, Settings, Mode
+    Reload
 return
 
 onAddProgram:
     FileSelectFile, exe_path, 3,, Browse for Main Executable (Sets Tab Name), Executables (*.exe)
     if (exe_path == "")
         return
-        
     captureCurrentTabRows()
-        
     SplitPath, exe_path, out_file_name, out_dir, out_ext, out_name_no_ext
     SplitPath, out_dir, out_folder_name
     tab_name := out_folder_name
     if (tab_name == "")
         tab_name := out_name_no_ext 
-        
     Loop {
         is_dup := false
         For k, v in g_tab_names {
@@ -325,11 +363,9 @@ onAddProgram:
         if (!is_dup)
             break
     }
-    
     g_tab_names.Push(tab_name)
     g_tab_data[tab_name] := {"paths": [{"name": out_name_no_ext, "val": exe_path}], "envs": [], "execs": [], "links": []}
     g_current_tab := g_tab_names.Length() 
-    
     saveState()
     Reload
 return
@@ -343,11 +379,9 @@ onRenameTab:
     InputBox, new_name, Rename Tab, Enter new name for tab "%old_name%":,, 300, 150
     if (ErrorLevel || new_name == "" || new_name == old_name)
         return
-        
     g_tab_names[g_current_tab] := new_name
     g_tab_data[new_name] := g_tab_data[old_name]
     g_tab_data.Delete(old_name)
-    
     captureCurrentTabRows()
     saveState()
     Reload
@@ -362,11 +396,9 @@ onDeleteTab:
     MsgBox, 52, Confirm Delete, Are you sure you want to completely delete "%target_name%"?
     IfMsgBox, No
         return
-        
     g_tab_data.Delete(target_name)
     g_tab_names.RemoveAt(g_current_tab)
     g_current_tab := 1 
-    
     saveState()
     Reload
 return
@@ -412,8 +444,7 @@ onAddLink:
 return
 
 onDeletePath:
-    parts := StrSplit(A_GuiControl, "_")
-    tab_idx := parts[4], row_idx := parts[5]
+    parts := StrSplit(A_GuiControl, "_"), tab_idx := parts[4], row_idx := parts[5]
     captureCurrentTabRows()
     g_tab_data[g_tab_names[tab_idx]].paths.RemoveAt(row_idx)
     saveState()
@@ -421,8 +452,7 @@ onDeletePath:
 return
 
 onDeleteEnv:
-    parts := StrSplit(A_GuiControl, "_")
-    tab_idx := parts[4], row_idx := parts[5]
+    parts := StrSplit(A_GuiControl, "_"), tab_idx := parts[4], row_idx := parts[5]
     captureCurrentTabRows()
     g_tab_data[g_tab_names[tab_idx]].envs.RemoveAt(row_idx)
     saveState()
@@ -430,8 +460,7 @@ onDeleteEnv:
 return
 
 onDeleteExec:
-    parts := StrSplit(A_GuiControl, "_")
-    tab_idx := parts[4], row_idx := parts[5]
+    parts := StrSplit(A_GuiControl, "_"), tab_idx := parts[4], row_idx := parts[5]
     captureCurrentTabRows()
     g_tab_data[g_tab_names[tab_idx]].execs.RemoveAt(row_idx)
     saveState()
@@ -439,18 +468,16 @@ onDeleteExec:
 return
 
 onDeleteLink:
-    parts := StrSplit(A_GuiControl, "_")
-    tab_idx := parts[4], row_idx := parts[5]
+    parts := StrSplit(A_GuiControl, "_"), tab_idx := parts[4], row_idx := parts[5]
     captureCurrentTabRows()
     g_tab_data[g_tab_names[tab_idx]].links.RemoveAt(row_idx)
     saveState()
     Reload
 return
 
-; --- BROWSE DIRECTORIES ---
+; --- BROWSE ---
 onBrowsePathDir:
-    parts := StrSplit(A_GuiControl, "_")
-    tab_idx := parts[4], row_idx := parts[5]
+    parts := StrSplit(A_GuiControl, "_"), tab_idx := parts[4], row_idx := parts[5]
     var_edit := "edit_path_" tab_idx "_" row_idx
     GuiControlGet, current_val,, %var_edit%
     FileSelectFolder, selected, *%current_val%, 3, Select Folder
@@ -459,8 +486,7 @@ onBrowsePathDir:
 return
 
 onBrowseExecDir:
-    parts := StrSplit(A_GuiControl, "_")
-    tab_idx := parts[4], row_idx := parts[5]
+    parts := StrSplit(A_GuiControl, "_"), tab_idx := parts[4], row_idx := parts[5]
     var_edit := "edit_exec_" tab_idx "_" row_idx
     GuiControlGet, current_val,, %var_edit%
     FileSelectFolder, selected, *%current_val%, 3, Select Folder
@@ -469,8 +495,7 @@ onBrowseExecDir:
 return
 
 onBrowseEnvDir:
-    parts := StrSplit(A_GuiControl, "_")
-    tab_idx := parts[4], row_idx := parts[5]
+    parts := StrSplit(A_GuiControl, "_"), tab_idx := parts[4], row_idx := parts[5]
     var_edit := "edit_env_val_" tab_idx "_" row_idx
     GuiControlGet, current_val,, %var_edit%
     FileSelectFolder, selected, *%current_val%, 3, Select Folder
@@ -479,8 +504,7 @@ onBrowseEnvDir:
 return
 
 onBrowseLinkSD:
-    parts := StrSplit(A_GuiControl, "_")
-    tab_idx := parts[5], row_idx := parts[6]
+    parts := StrSplit(A_GuiControl, "_"), tab_idx := parts[5], row_idx := parts[6]
     var_edit := "edit_link_s_" tab_idx "_" row_idx
     var_tname := "edit_link_tname_" tab_idx "_" row_idx
     GuiControlGet, current_val,, %var_edit%
@@ -493,8 +517,7 @@ onBrowseLinkSD:
 return
 
 onBrowseLinkTD:
-    parts := StrSplit(A_GuiControl, "_")
-    tab_idx := parts[5], row_idx := parts[6]
+    parts := StrSplit(A_GuiControl, "_"), tab_idx := parts[5], row_idx := parts[6]
     var_edit := "edit_link_tdir_" tab_idx "_" row_idx
     GuiControlGet, current_val,, %var_edit%
     FileSelectFolder, selected, *%current_val%, 3, Select Target Folder
@@ -502,10 +525,8 @@ onBrowseLinkTD:
         GuiControl,, %var_edit%, %selected%
 return
 
-; --- BROWSE FILES ---
 onBrowsePathFile:
-    parts := StrSplit(A_GuiControl, "_")
-    tab_idx := parts[4], row_idx := parts[5]
+    parts := StrSplit(A_GuiControl, "_"), tab_idx := parts[4], row_idx := parts[5]
     var_edit := "edit_path_" tab_idx "_" row_idx
     GuiControlGet, current_val,, %var_edit%
     FileSelectFile, selected, 3, %current_val%, Select File
@@ -514,8 +535,7 @@ onBrowsePathFile:
 return
 
 onBrowseExecFile:
-    parts := StrSplit(A_GuiControl, "_")
-    tab_idx := parts[4], row_idx := parts[5]
+    parts := StrSplit(A_GuiControl, "_"), tab_idx := parts[4], row_idx := parts[5]
     var_edit := "edit_exec_" tab_idx "_" row_idx
     GuiControlGet, current_val,, %var_edit%
     FileSelectFile, selected, 3, %current_val%, Select File, Executables (*.exe)
@@ -524,8 +544,7 @@ onBrowseExecFile:
 return
 
 onBrowseEnvFile:
-    parts := StrSplit(A_GuiControl, "_")
-    tab_idx := parts[4], row_idx := parts[5]
+    parts := StrSplit(A_GuiControl, "_"), tab_idx := parts[4], row_idx := parts[5]
     var_edit := "edit_env_val_" tab_idx "_" row_idx
     GuiControlGet, current_val,, %var_edit%
     FileSelectFile, selected, 3, %current_val%, Select File
@@ -534,8 +553,7 @@ onBrowseEnvFile:
 return
 
 onBrowseLinkSF:
-    parts := StrSplit(A_GuiControl, "_")
-    tab_idx := parts[5], row_idx := parts[6]
+    parts := StrSplit(A_GuiControl, "_"), tab_idx := parts[5], row_idx := parts[6]
     var_edit := "edit_link_s_" tab_idx "_" row_idx
     var_tname := "edit_link_tname_" tab_idx "_" row_idx
     GuiControlGet, current_val,, %var_edit%
@@ -547,7 +565,6 @@ onBrowseLinkSF:
     }
 return
 
-
 ; ==========================================
 ;         LIVE VERIFICATION
 ; ==========================================
@@ -555,8 +572,36 @@ pathTimer:
     checkPaths()
 return
 
+updateControlColor(var, path, is_env_name := false) {
+    global g_path_states
+    
+    ; Special logic for Environment Variables Name checking
+    if (is_env_name) {
+        state := (path == "") ? -1 : 0
+        if (path != "") {
+            EnvGet, env_check, %path%
+            if (env_check != "")
+                state := 1
+        }
+    } else {
+        ; Normal path checking
+        state := (path == "") ? -1 : (FileExist(path) ? 1 : 0)
+    }
+    
+    if (g_path_states[var] != state) {
+        g_path_states[var] := state
+        if (state == 1)
+            GuiControl, +c55FF55, %var%
+        else if (state == 0)
+            GuiControl, +cFF4444, %var%
+        else
+            GuiControl, +cD6D6D6, %var%
+        GuiControl, +Redraw, %var%
+    }
+}
+
 checkPaths() {
-    global g_current_tab, g_tab_names
+    global g_current_tab, g_current_mode
     if (g_current_tab == 1)
         return
         
@@ -565,14 +610,7 @@ checkPaths() {
         GuiControlGet, path_val,, %edit_var%
         if (ErrorLevel) 
             break
-        if (path_val != "") {
-            if FileExist(path_val)
-                GuiControl, +c55FF55, %edit_var%
-            else
-                GuiControl, +cFF4444, %edit_var%
-        } else {
-            GuiControl, +cD6D6D6, %edit_var%
-        }
+        updateControlColor(edit_var, path_val)
     }
     
     Loop, 50 {
@@ -580,29 +618,24 @@ checkPaths() {
         GuiControlGet, path_val,, %edit_var%
         if (ErrorLevel) 
             break
-        if (path_val != "") {
-            if FileExist(path_val)
-                GuiControl, +c55FF55, %edit_var%
-            else
-                GuiControl, +cFF4444, %edit_var%
-        } else {
-            GuiControl, +cD6D6D6, %edit_var%
-        }
+        updateControlColor(edit_var, path_val)
     }
     
+    ; Envs Check (Check both Name existence and Path validity)
     Loop, 50 {
-        edit_var := "edit_env_val_" g_current_tab "_" A_Index
-        GuiControlGet, path_val,, %edit_var%
+        ; Check if the name exists in Windows Environment Variables
+        name_var := "edit_env_name_" g_current_tab "_" A_Index
+        GuiControlGet, name_val,, %name_var%
         if (ErrorLevel) 
             break
-        if (path_val != "" && (InStr(path_val, ":\") || InStr(path_val, "\\"))) {
-            if FileExist(path_val)
-                GuiControl, +c55FF55, %edit_var%
-            else
-                GuiControl, +cFF4444, %edit_var%
-        } else {
-            GuiControl, +cD6D6D6, %edit_var%
-        }
+        if (g_current_mode == "Apply") ; Only show green/red bold in Apply mode per requirements
+            updateControlColor(name_var, name_val, true)
+            
+        ; Standard path check for value
+        edit_var := "edit_env_val_" g_current_tab "_" A_Index
+        GuiControlGet, path_val,, %edit_var%
+        if (InStr(path_val, ":\") || InStr(path_val, "\\"))
+            updateControlColor(edit_var, path_val)
     }
     
     Loop, 50 {
@@ -611,28 +644,12 @@ checkPaths() {
         GuiControlGet, src_val,, %edit_src%
         if (ErrorLevel) 
             break
-            
-        if (src_val != "") {
-            if FileExist(src_val)
-                GuiControl, +c55FF55, %edit_src%
-            else
-                GuiControl, +cFF4444, %edit_src%
-        } else {
-            GuiControl, +cD6D6D6, %edit_src%
-        }
+        updateControlColor(edit_src, src_val)
         
         GuiControlGet, tgt_val,, %edit_tdir%
-        if (tgt_val != "") {
-            if FileExist(tgt_val)
-                GuiControl, +c55FF55, %edit_tdir%
-            else
-                GuiControl, +cFF4444, %edit_tdir%
-        } else {
-            GuiControl, +cD6D6D6, %edit_tdir%
-        }
+        updateControlColor(edit_tdir, tgt_val)
     }
 }
-
 
 ; ==========================================
 ;         STATE MANAGEMENT CORE
@@ -646,21 +663,16 @@ return
 onApplyConfigs:
     captureCurrentTabRows()
     saveState()
-    
     GoSub, RunWindowsRegistryEngine
-    
     env_updated := false
     For k, tab_name in g_tab_names {
         if (k == 1)
             continue
-        if (applyTabConfig(tab_name)) {
+        if (applyTabConfig(tab_name))
             env_updated := true
-        }
     }
-    
-    if (env_updated) {
+    if (env_updated)
         SendMessage, 0x1A, 0, "Environment",, ahk_id 0xFFFF
-    }
     MsgBox, 64, Apply All, All configurations applied successfully!
 return
 
@@ -668,52 +680,42 @@ onApplyCurrentTab:
     captureCurrentTabRows()
     saveState()
     current_tab_name := g_tab_names[g_current_tab]
-    
     if (g_current_tab == 1) {
         GoSub, RunWindowsRegistryEngine
     } else {
-        if (applyTabConfig(current_tab_name)) {
+        if (applyTabConfig(current_tab_name))
             SendMessage, 0x1A, 0, "Environment",, ahk_id 0xFFFF
-        }
         MsgBox, 64, Apply Tab, Applied configurations for %current_tab_name%.
     }
 return
 
 RunWindowsRegistryEngine:
     updates_made := 0
-    
     For _, sec_name in g_win_section_names {
         opts := g_win_sections[sec_name]
         For k, opt in opts {
             var_id := opt.id
             current_state := %var_id%
             initial_state := opt.initial_state
-            
             if (current_state != initial_state) {
                 target_state := current_state ? "Enabled" : "Disabled"
                 target_dir := g_reg_dir "\" opt.path "\"
-                
-                ; Prioritize executing .reg, then .ahk, then .exe
                 extensions := ["reg", "ahk", "exe"]
                 For idx, ext in extensions {
                     target_file := target_dir target_state "." ext
                     if FileExist(target_file) {
-                        if (ext == "reg") {
+                        if (ext == "reg")
                             RunWait, regedit.exe /s "%target_file%"
-                        } else {
+                        else
                             RunWait, "%target_file%"
-                        }
                         updates_made++
                         break
                     }
                 }
-                ; Update initial state so it doesn't trigger again until changed
                 g_win_sections[sec_name][k].initial_state := current_state 
             }
         }
     }
-    
-    ; Immediately resave the new "initial_states" back to INI 
     saveState()
     if (updates_made > 0)
         MsgBox, 64, Registry Updates, Applied %updates_made% changed registry configurations successfully.
@@ -726,14 +728,14 @@ ExitApp
 
 captureCurrentTabRows() {
     global
+    if (g_current_mode == "Apply")
+        return ; Prevent saving Evaluated text blocks to INI
+        
     Gui, Submit, NoHide
-    
     For tab_idx, tab_name in g_tab_names {
         if (tab_idx == 1)
             continue
-            
         data := g_tab_data[tab_name]
-        
         For i, p in data.paths {
             var_n := "edit_path_name_" tab_idx "_" i
             var_edit := "edit_path_" tab_idx "_" i
@@ -764,11 +766,9 @@ captureCurrentTabRows() {
 saveState() {
     global
     FileDelete, %g_ini_file% 
-    
     tab_str := ""
     For k, v in g_tab_names
         tab_str .= (A_Index=1 ? "" : "|") . v
-        
     IniWrite, %tab_str%, %g_ini_file%, Settings, Tabs
     IniWrite, %g_current_tab%, %g_ini_file%, Settings, ActiveTab
     IniWrite, %g_current_mode%, %g_ini_file%, Settings, Mode
@@ -781,26 +781,20 @@ saveState() {
             IniWrite, %val%, %g_ini_file%, Windows, %var_id%
         }
     }
-    
     For k, tab_name in g_tab_names {
         if (k == 1)
             continue
-        
         data := g_tab_data[tab_name]
-        
         For i, p in data.paths {
             IniWrite, % p.name, %g_ini_file%, %tab_name%_Paths, %i%_Name
             IniWrite, % p.val,  %g_ini_file%, %tab_name%_Paths, %i%_Val
         }
-            
         For i, e in data.envs {
             IniWrite, % e.name, %g_ini_file%, %tab_name%_Envs, %i%_Name
             IniWrite, % e.val,  %g_ini_file%, %tab_name%_Envs, %i%_Val
         }
-        
         For i, x in data.execs
             IniWrite, %x%, %g_ini_file%, %tab_name%_Execs, %i%
-            
         For i, l in data.links {
             IniWrite, % l.src, %g_ini_file%, %tab_name%_Links, %i%_Src
             IniWrite, % l.tgt_dir, %g_ini_file%, %tab_name%_Links, %i%_TgtDir
@@ -818,7 +812,6 @@ loadState() {
         g_current_mode := "Config"
         return
     }
-    
     IniRead, tabs, %g_ini_file%, Settings, Tabs, WINDOWS
     g_tab_names := StrSplit(tabs, "|")
     IniRead, g_current_tab, %g_ini_file%, Settings, ActiveTab, 1
@@ -832,17 +825,13 @@ loadState() {
             g_win_sections[sec_name][k].initial_state := val
         }
     }
-    
     For k, tab_name in g_tab_names {
         if (k == 1)
             continue
-            
         g_tab_data[tab_name] := {"paths":[], "envs":[], "execs":[], "links":[]}
-        
         Loop {
             IniRead, n, %g_ini_file%, %tab_name%_Paths, %A_Index%_Name, ||END||
             if (n == "||END||") {
-                ; Backwards compatibility for old string paths
                 IniRead, val, %g_ini_file%, %tab_name%_Paths, %A_Index%, ||END||
                 if (val == "||END||")
                     break
@@ -862,18 +851,15 @@ loadState() {
             IniRead, v, %g_ini_file%, %tab_name%_Envs, %A_Index%_Val, %A_Space%
             g_tab_data[tab_name].envs.Push({"name": n, "val": v})
         }
-        
         Loop {
             IniRead, x, %g_ini_file%, %tab_name%_Execs, %A_Index%, ||END||
             if (x == "||END||")
                 break
             g_tab_data[tab_name].execs.Push(x)
         }
-        
         Loop {
             IniRead, src, %g_ini_file%, %tab_name%_Links, %A_Index%_Src, ||END||
             if (src == "||END||") {
-                ; Legacy string check
                 IniRead, l, %g_ini_file%, %tab_name%_Links, %A_Index%, ||END||
                 if (l != "||END||") {
                     g_tab_data[tab_name].links.Push({"src": l, "tgt_dir": "", "tgt_name": ""})
@@ -881,11 +867,8 @@ loadState() {
                 }
                 break
             }
-            
             IniRead, tgt_dir, %g_ini_file%, %tab_name%_Links, %A_Index%_TgtDir, %A_Space%
             IniRead, tgt_name, %g_ini_file%, %tab_name%_Links, %A_Index%_TgtName, %A_Space%
-            
-            ; Backwards compat for v0.54 Tgt split
             if (tgt_dir == "" && tgt_name == "") {
                 IniRead, old_tgt, %g_ini_file%, %tab_name%_Links, %A_Index%_Tgt, ||END||
                 if (old_tgt != "||END||" && old_tgt != "") {
@@ -894,28 +877,23 @@ loadState() {
                     tgt_name := out_name
                 }
             }
-            
             g_tab_data[tab_name].links.Push({"src": src, "tgt_dir": tgt_dir, "tgt_name": tgt_name})
         }
     }
 }
 
 ; ==========================================
-;         THEMING UTILITIES
+;         THEMING & EXECUTION UTILITIES
 ; ==========================================
 setDarkControl(hwnd) {
     DllCall("uxtheme\SetWindowTheme", "Ptr", hwnd, "Str", "DarkMode_Explorer", "Ptr", 0)
 }
 
-; ==========================================
-;         EXECUTION LOGIC
-; ==========================================
 applyTabConfig(tab_name) {
     global g_tab_data
     data := g_tab_data[tab_name]
     env_changed := false
     
-    ; 1 & 2. Paths and Envs -> Set Windows Environment Variables
     For i, p in data.paths {
         if (p.name != "" && p.val != "") {
             RegWrite, REG_SZ, HKCU\Environment, % p.name, % p.val
@@ -928,41 +906,30 @@ applyTabConfig(tab_name) {
             env_changed := true
         }
     }
-    
-    ; 3. Execs -> Run directories or files
     For i, x in data.execs {
         if (x == "")
             continue
-        
         attr := FileExist(x)
         if (attr) {
             if (InStr(attr, "D")) {
                 Loop, Files, %x%\*.exe
-                {
                     Run, "%A_LoopFileFullPath%", %x%
-                }
                 Loop, Files, %x%\*.bat
-                {
                     Run, "%A_LoopFileFullPath%", %x%
-                }
             } else {
                 SplitPath, x, , out_dir
                 Run, "%x%", %out_dir%
             }
         }
     }
-    
-    ; 4. Links -> Create .lnk Shortcuts
     For i, l in data.links {
         if (l.src != "" && l.tgt_dir != "" && l.tgt_name != "") {
             shortcut_name := l.tgt_name
-            if (!InStr(shortcut_name, ".lnk")) {
+            if (!InStr(shortcut_name, ".lnk"))
                 shortcut_name .= ".lnk"
-            }
             shortcut_path := l.tgt_dir "\" shortcut_name
             FileCreateShortcut, % l.src, %shortcut_path%
         }
     }
-    
     return env_changed
 }
