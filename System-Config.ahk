@@ -1,5 +1,5 @@
 /* -------------------------
-    System Configurator v0.67
+    System Configurator v0.69
     Tray Icon & Link Types
 -------------------------
 */ 
@@ -7,6 +7,22 @@
 #NoEnv
 #SingleInstance Force
 #Persistent
+global log_file := A_ScriptDir . "\\Apply-Log.md"
+
+writeLog(msg, color="") {
+    global log_file
+    if (color == "red")
+        FileAppend, <span style="color:red">%msg%</span>`n`n, %log_file%
+    else
+        FileAppend, %msg%`n`n, %log_file%
+}
+
+resetLog() {
+    global log_file
+    FileDelete, %log_file%
+    FileAppend, # Apply Execution Log - %A_Now%`n`n, %log_file%
+}
+
 SetBatchLines, -1
 SetWorkingDir, %A_ScriptDir%
 
@@ -22,7 +38,7 @@ global g_current_mode    := "Config"
 global g_tab_menu        := "TabMenu"
 
 global dark_background := "1E1E1E"
-global border_color := "444444"
+global border_color := "2D2D2D"
 global font_color := "D6D6D6"
 
 ; State tracking for bug-free path redraws
@@ -64,13 +80,13 @@ DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", h_main_gui, "Int", 20, "Int*", tr
 ; Mode Selection & Save State at TOP
 Gui, Add, GroupBox, x20 y10 w1160 h80 c%mode_color%, Execution Mode
 Gui, Font, s12 Bold
-Gui, Add, Button, vmode_btn gtoggleMode x40 y35 w250 h40 hwndh_mode, MODE: %g_current_mode%
+Gui, Add, Button, vmode_btn gtoggleMode x40 y35 w250 h40 hwndh_mode -Theme +Border, MODE: %g_current_mode%
 
 if (g_current_mode == "Config") {
-    Gui, Add, Button, gonManualSave x300 y35 w250 h40 hwndh_save, SAVE STATE
+    Gui, Add, Button, gonManualSave x300 y35 w250 h40 hwndh_save -Theme +Border, SAVE STATE
     setDarkControl(h_save)
 } else {
-    Gui, Add, Button, x300 y35 w250 h40 gonApplyConfigs hwndh_apply, APPLY ALL
+    Gui, Add, Button, x300 y35 w250 h40 gonApplyConfigs hwndh_apply -Theme +Border, APPLY ALL
     setDarkControl(h_apply)
 }
 setDarkControl(h_mode)
@@ -109,7 +125,7 @@ For tab_idx, tab_name in g_tab_names
         if (g_current_mode == "Apply") {
             Gui, Font, Bold s12 cFFFFFF
             hwnd_var := "h_app_" tab_idx
-            Gui, Add, Button, hwnd%hwnd_var% gonApplyCurrentTab x920 y720 w240 h40, Apply WINDOWS
+            Gui, Add, Button, hwnd%hwnd_var% gonApplyCurrentTab x920 y720 w240 h40 -Theme +Border, Apply WINDOWS
             handle := %hwnd_var%
             setDarkControl(handle)
             Gui, Font, Norm s12 c%font_color%
@@ -149,8 +165,8 @@ For tab_idx, tab_name in g_tab_names
                         var_d := "btn_path_d_" tab_idx "_" i
                         var_f := "btn_path_f_" tab_idx "_" i
                         var_del := "btn_del_path_" tab_idx "_" i
-                        Gui, Add, Edit, v%var_n% x40 y%y_pos% w180 h28, %path_name%
-                        Gui, Add, Edit, v%var_edit% x230 y%y_pos% w780 h28, %path_value%
+                        Gui, Add, Edit, v%var_n% x40 y%y_pos% w180 h28 -E0x200 -Theme +Border, %path_name%
+                        Gui, Add, Edit, v%var_edit% x230 y%y_pos% w780 h28 -E0x200 -Theme +Border, %path_value%
                         Gui, Add, Button, v%var_d% gonBrowsePathDir hwndh_d x1020 y%y_pos% w30 h28 -Theme +Border, D
                         Gui, Add, Button, v%var_f% gonBrowsePathFile hwndh_f x1055 y%y_pos% w30 h28 -Theme +Border, F
                         if (i > 1) {
@@ -175,8 +191,8 @@ For tab_idx, tab_name in g_tab_names
                         var_d := "btn_env_d_" tab_idx "_" i
                         var_f := "btn_env_f_" tab_idx "_" i
                         var_del := "btn_del_env_" tab_idx "_" i
-                        Gui, Add, Edit, v%var_n% x40 y%y_pos% w200 h28, % e.name
-                        Gui, Add, Edit, v%var_v% x250 y%y_pos% w760 h28, % e.val
+                        Gui, Add, Edit, v%var_n% x40 y%y_pos% w200 h28 -E0x200 -Theme +Border, % e.name
+                        Gui, Add, Edit, v%var_v% x250 y%y_pos% w760 h28 -E0x200 -Theme +Border, % e.val
                         Gui, Add, Button, v%var_d% gonBrowseEnvDir hwndh_d x1020 y%y_pos% w30 h28 -Theme +Border, D
                         Gui, Add, Button, v%var_f% gonBrowseEnvFile hwndh_f x1055 y%y_pos% w30 h28 -Theme +Border, F
                         if (i > 0) {
@@ -201,7 +217,7 @@ For tab_idx, tab_name in g_tab_names
                         var_d := "btn_exec_d_" tab_idx "_" i
                         var_f := "btn_exec_f_" tab_idx "_" i
                         var_del := "btn_del_exec_" tab_idx "_" i
-                        Gui, Add, Edit, v%var_edit% x40 y%y_pos% w970 h28, %x%
+                        Gui, Add, Edit, v%var_edit% x40 y%y_pos% w970 h28 -E0x200 -Theme +Border, %x%
                         Gui, Add, Button, v%var_d% gonBrowseExecDir hwndh_d x1020 y%y_pos% w30 h28 -Theme +Border, D
                         Gui, Add, Button, v%var_f% gonBrowseExecFile hwndh_f x1055 y%y_pos% w30 h28 -Theme +Border, F
                         if (i > 0) {
@@ -248,12 +264,12 @@ For tab_idx, tab_name in g_tab_names
                         
                         type_str := "Shortcut|Symlink|Hardlink"
                         
-                        Gui, Add, Edit, v%var_e_s% x40 y%y_pos% w280 h28, % l.src
+                        Gui, Add, Edit, v%var_e_s% x40 y%y_pos% w280 h28 -E0x200 -Theme +Border, % l.src
                         Gui, Add, Button, v%var_d_s% gonBrowseLinkSD hwndh_d_s x325 y%y_pos% w30 h28 -Theme +Border, D
                         Gui, Add, Button, v%var_f_s% gonBrowseLinkSF hwndh_f_s x360 y%y_pos% w30 h28 -Theme +Border, F
-                        Gui, Add, Edit, v%var_e_td% x400 y%y_pos% w350 h28, % l.tgt_dir
+                        Gui, Add, Edit, v%var_e_td% x400 y%y_pos% w350 h28 -E0x200 -Theme +Border, % l.tgt_dir
                         Gui, Add, Button, v%var_d_t% gonBrowseLinkTD hwndh_d_t x755 y%y_pos% w30 h28 -Theme +Border, D
-                        Gui, Add, Edit, v%var_e_tn% x790 y%y_pos% w180 h28, % l.tgt_name
+                        Gui, Add, Edit, v%var_e_tn% x790 y%y_pos% w180 h28 -E0x200 -Theme +Border, % l.tgt_name
                         
                         Gui, Add, DropDownList, v%var_e_type% hwndh_type x980 y%y_pos% w100 r3 -Theme +Background%dark_background% c%font_color%, %type_str%
                         if (l.type != "")
@@ -287,7 +303,7 @@ For tab_idx, tab_name in g_tab_names
         if (g_current_mode == "Apply") {
             Gui, Font, Bold s12 cFFFFFF
             hwnd_var := "h_app_" tab_idx
-            Gui, Add, Button, hwnd%hwnd_var% gonApplyCurrentTab x920 y720 w240 h40, Apply %tab_name%
+            Gui, Add, Button, hwnd%hwnd_var% gonApplyCurrentTab x920 y720 w240 h40 -Theme +Border, Apply %tab_name%
             handle := %hwnd_var%
             setDarkControl(handle)
             Gui, Font, Norm s12 c%font_color%
@@ -295,7 +311,7 @@ For tab_idx, tab_name in g_tab_names
     }
 }
 Gui, Tab 
-Gui, Show, w1200 h800, System-Config v0.67
+Gui, Show, w1200 h800, System-Config v0.69
 
 SetTimer, pathTimer, 500
 return
@@ -944,15 +960,29 @@ applyTabConfig(tab_name) {
             src_path := l.src
             
             if (l.type == "Shortcut") {
+                if (FileExist(shortcut_path))
+                    FileDelete, %shortcut_path%
                 FileCreateShortcut, %src_path%, %shortcut_path%
-            } else if (l.type == "Symlink") {
-                attr := FileExist(src_path)
-                if (InStr(attr, "D"))
-                    RunWait, %ComSpec% /c mklink /D "%shortcut_path%" "%src_path%",, Hide
-                else
-                    RunWait, %ComSpec% /c mklink "%shortcut_path%" "%src_path%",, Hide
-            } else if (l.type == "Hardlink") {
-                RunWait, %ComSpec% /c mklink /H "%shortcut_path%" "%src_path%",, Hide
+            } else {
+                ; Handling Symlink/Hardlink
+                if (FileExist(shortcut_path)) {
+                    ; Check if it's already a link
+                    FileGetAttrib, attr, %shortcut_path%
+                    if (InStr(attr, "L")) {
+                        FileDelete, %shortcut_path%
+                    } else {
+                        ; Rename original target
+                        FileMove, %shortcut_path%, %shortcut_path% . default
+                    }
+                }
+                
+                if (l.type == "Symlink") {
+                    attr := FileExist(src_path)
+                    cmd := (InStr(attr, "D")) ? "/c mklink /D" : "/c mklink"
+                    RunWait, %ComSpec% %cmd% "%shortcut_path%" "%src_path%",, Hide
+                } else if (l.type == "Hardlink") {
+                    RunWait, %ComSpec% /c mklink /H "%shortcut_path%" "%src_path%",, Hide
+                }
             }
         }
     }
